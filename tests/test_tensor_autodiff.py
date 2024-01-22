@@ -1,10 +1,11 @@
 from typing import Callable, Iterable, List, Tuple
 
 import pytest
+import numpy as np
 from hypothesis import given
 from hypothesis.strategies import DataObject, data, lists, permutations
 
-from minitorch import MathTestVariable, Tensor, grad_check, tensor
+from minitorch import MathTestVariable, Tensor, grad_check, tensor, topological_sort
 
 from .strategies import assert_close, small_floats
 from .tensor_strategies import shaped_tensors, tensors
@@ -20,6 +21,49 @@ def test_create(t1: List[float]) -> None:
         assert t1[i] == t2[i]
 
 
+def test_topo_case1() -> None:
+    # Test case 1
+    a1, b1 = tensor([[0.88282157]]), tensor([[0.90170084]])
+    c1 = 3 * a1 * a1 + 4 * b1 * a1 - a1
+
+    soln = np.array(
+        [   [[0.88282157]],[[2.64846471]],
+            [[2.33812177]],[[0.90170084]],
+            [[3.60680336]],[[3.1841638]],
+            [[5.52228558]],[[-0.88282157]],
+            [[4.63946401]],
+        ]
+    )
+
+    topo_order = np.array([x.to_numpy() for x in topological_sort(c1)])[::-1]
+    assert len(soln) == len(topo_order)
+    np.testing.assert_allclose(topo_order, soln, rtol=1e-06, atol=1e-06)
+    
+    
+def test_topo_case2() -> None:
+    # Test case 2
+    
+    a1, b1 = tensor([[0.20914675], [0.65264178]]), tensor([[0.65394286], [.08218317]])
+    c1 = 3 * ((b1 * a1) + (2.3412 * b1) * a1) + 1.5
+    
+    soln = [[[0.65394286],[0.08218317]],
+            [[0.20914675],[0.65264178]],
+            [[0.13677002],[0.05363617]],
+            [[1.53101102],[0.19240724]],
+            [[0.32020598],[0.125573  ]],
+            [[0.456976  ],[0.17920917]],
+            [[1.37092801],[0.53762752]],
+            [[2.87092801],[2.03762752]]]
+
+    topo_order = np.array([x.to_numpy() for x in topological_sort(c1)])[::-1]
+
+    assert len(soln) == len(topo_order)
+    
+    # step through list as entries differ in length
+    for topo, sol in zip(topo_order, soln):
+        np.testing.assert_allclose(topo, sol, rtol=1e-06, atol=1e-06)
+        
+        
 @given(tensors())
 @pytest.mark.parametrize("fn", one_arg)
 def test_one_derivative(
@@ -135,4 +179,3 @@ def test_fromnumpy() -> None:
     t2 = tensor(n.tolist())
     for ind in t._tensor.indices():
         assert t[ind] == t2[ind]
-

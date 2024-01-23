@@ -155,7 +155,7 @@ class CudaKernelOps(TensorOps):
 
         def ret(a: Tensor, dim: int) -> Tensor:
             out_shape = list(a.shape)
-            out_shape[dim] = (a.shape[dim] - 1) // 1024 + 1
+            out_shape[dim] = 1
             out = a.zeros(tuple(out_shape))
 
             # Define the return type for the tensorReduce function

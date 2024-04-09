@@ -1,7 +1,7 @@
 from typing import Sequence
 
 from .module import Parameter
-
+import math
 
 class Optimizer:
     def __init__(self, parameters: Sequence[Parameter]):

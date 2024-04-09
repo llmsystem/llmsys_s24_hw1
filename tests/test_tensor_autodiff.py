@@ -18,7 +18,7 @@ def test_create(t1: List[float]) -> None:
     "Test the ability to create an index a 1D Tensor"
     t2 = tensor(t1)
     for i in range(len(t1)):
-        assert t1[i] == t2[i]
+        np.testing.assert_allclose(t1[i], t2[i], atol=1e-5, rtol=1e-5)
 
 
 def test_topo_case1() -> None:
@@ -173,7 +173,6 @@ def test_back_view(t1: Tensor) -> None:
 
 def test_fromnumpy() -> None:
     t = tensor([[2, 3, 4], [4, 5, 7]])
-    print(t)
     assert t.shape == (2, 3)
     n = t.to_numpy()
     t2 = tensor(n.tolist())

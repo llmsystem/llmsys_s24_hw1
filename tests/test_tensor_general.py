@@ -30,7 +30,7 @@ def test_create(backend: str, t1: List[float]) -> None:
     "Create different tensors."
     t2 = minitorch.tensor(t1, backend=shared[backend])
     for i in range(len(t1)):
-        assert t1[i] == t2[i]
+        np.testing.assert_allclose(t1[i], t2[i], atol=1e-5, rtol=1e-5)
 
 
 @given(data())

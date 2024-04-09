@@ -170,7 +170,7 @@ class SentenceSentimentTrain:
         model = self.model
         (X_train, y_train) = data_train
         n_training_samples = len(X_train)
-        optim = minitorch.SGD(self.model.parameters(), learning_rate)
+        optim = minitorch.Adam(self.model.parameters(), learning_rate)
         losses = []
         train_accuracy = []
         validation_accuracy = []

@@ -74,6 +74,7 @@ class TensorBackend:
         self.id_map = ops.map(operators.id)
         self.id_cmap = ops.cmap(operators.id)
         self.inv_map = ops.map(operators.inv)
+        self.tanh_map = ops.map(operators.tanh)
 
         # Zips
         self.add_zip = ops.zip(operators.add)
@@ -84,6 +85,7 @@ class TensorBackend:
         self.relu_back_zip = ops.zip(operators.relu_back)
         self.log_back_zip = ops.zip(operators.log_back)
         self.inv_back_zip = ops.zip(operators.inv_back)
+        self.pow_scalar_zip = ops.zip(operators.pow)
 
         # Reduce
         self.add_reduce = ops.reduce(operators.add, 0.0)

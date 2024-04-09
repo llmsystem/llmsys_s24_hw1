@@ -17,6 +17,8 @@ one_arg, two_arg, red_arg = MathTestVariable._comp_testing()
 shared: Dict[str, TensorBackend] = {}
 from minitorch.cuda_kernel_ops import CudaKernelOps
 
+import sys
+sys.path.append("./")
 from project.run_sentiment import Linear, Network
 
 

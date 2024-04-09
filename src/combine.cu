@@ -4,11 +4,9 @@
 #include <sstream>
 #include <fstream>
 
-#define BASE_THREAD_NUM 32
 #define BLOCK_DIM 1024
 #define MAX_DIMS 10
 #define TILE 32
-typedef double scalar_t;
 
 #define ADD_FUNC       1
 #define MUL_FUNC       2
@@ -26,8 +24,10 @@ typedef double scalar_t;
 #define INV_BACK_FUNC  14
 #define IS_CLOSE_FUNC  15
 #define MAX_FUNC       16
+#define POW            17
+#define TANH           18
 
-__device__ scalar_t fn(int fn_id, scalar_t x, scalar_t y=0) {
+__device__ float fn(int fn_id, float x, float y=0) {
     switch(fn_id) {
       case ADD_FUNC: {
         return x + y;
@@ -86,7 +86,7 @@ __device__ scalar_t fn(int fn_id, scalar_t x, scalar_t y=0) {
         return exp(x);
       }
       case INV_FUNC: {
-        return scalar_t(1.0 / x);
+        return float(1.0 / x);
       }
       case INV_BACK_FUNC: {
         return -(1.0 / (x * x)) * y;
@@ -101,6 +101,16 @@ __device__ scalar_t fn(int fn_id, scalar_t x, scalar_t y=0) {
         else {
           return y;
         }
+      }
+      case POW: {
+        // BEGIN ASSIGN1_0
+        return x;
+        // END ASSIGN1_0
+      }
+      case TANH: {
+        // BEGIN ASSIGN1_0
+        return x;
+        // END ASSIGN1_0
       }
       default: {
         return x + y;
@@ -150,7 +160,7 @@ __device__ void to_index(int ordinal, const int* shape, int* out_index, int num_
     }
 }
 
-__device__ void broadcast_index(const int* big_index, const int* big_shape, int num_dims_big, int* out_index, const int* shape, int num_dims) {
+__device__ void broadcast_index(const int* big_index, const int* big_shape, const int* shape, int* out_index, int num_dims_big, int num_dims) {
   /**
    * Convert a big_index into big_shape to a smaller out_index into shape following broadcasting rules. 
    * In this case it may be larger or with more dimensions than the shape given. 
@@ -178,13 +188,13 @@ __device__ void broadcast_index(const int* big_index, const int* big_shape, int 
 
 
 __global__ void MatrixMultiplyKernel(
-    scalar_t* out,
+    float* out,
     const int* out_shape,
     const int* out_strides,
-    scalar_t* a_storage,
+    float* a_storage,
     const int* a_shape,
     const int* a_strides,
-    scalar_t* b_storage,
+    float* b_storage,
     const int* b_shape,
     const int* b_strides
 ) {
@@ -213,8 +223,8 @@ __global__ void MatrixMultiplyKernel(
    *   None (Fills in out array)
    */
 
-    __shared__ scalar_t a_shared[TILE][TILE];
-    __shared__ scalar_t b_shared[TILE][TILE];
+    __shared__ float a_shared[TILE][TILE];
+    __shared__ float b_shared[TILE][TILE];
 
     // In each block, we will compute a batch of the output matrix
     // All the threads in the block will work together to compute this batch
@@ -240,11 +250,11 @@ __global__ void MatrixMultiplyKernel(
 
 
 __global__ void mapKernel(
-    scalar_t* out, 
+    float* out, 
     int* out_shape, 
     int* out_strides, 
     int out_size, 
-    scalar_t* in_storage, 
+    float* in_storage, 
     int* in_shape, 
     int* in_strides,
     int shape_size,
@@ -293,15 +303,15 @@ __global__ void mapKernel(
 
 
 __global__ void reduceKernel(
-    scalar_t* out, 
+    float* out, 
     int* out_shape, 
     int* out_strides, 
     int out_size, 
-    scalar_t* a_storage, 
+    float* a_storage, 
     int* a_shape, 
     int* a_strides, 
     int reduce_dim,
-    double reduce_value,
+    float reduce_value,
     int shape_size,
     int fn_id
 ) {
@@ -349,16 +359,16 @@ __global__ void reduceKernel(
 }
 
 __global__ void zipKernel(
-    scalar_t* out, 
+    float* out, 
     int* out_shape, 
     int* out_strides, 
     int out_size,
     int out_shape_size,
-    scalar_t* a_storage, 
+    float* a_storage, 
     int* a_shape, 
     int* a_strides,
     int a_shape_size,
-    scalar_t* b_storage, 
+    float* b_storage, 
     int* b_shape, 
     int* b_strides,
     int b_shape_size,
@@ -418,92 +428,268 @@ __global__ void zipKernel(
 extern "C" {
 
 void MatrixMultiply(
-    scalar_t* out,
+    float* out,
     int* out_shape,
     int* out_strides,
-    scalar_t* a_storage,
+    float* a_storage,
     int* a_shape,
     int* a_strides,
-    scalar_t* b_storage,
+    float* b_storage,
     int* b_shape,
     int* b_strides,
     int batch, int m, int p
 ) {
-    dim3 blockDims(BASE_THREAD_NUM, BASE_THREAD_NUM, 1); // Adjust these values based on your specific requirements
-    dim3 gridDims((m + BASE_THREAD_NUM - 1) / BASE_THREAD_NUM, (p + BASE_THREAD_NUM - 1) / BASE_THREAD_NUM, batch);
+    int n = a_shape[2];
+
+    // Allocate device memory
+    float *d_out, *d_a, *d_b;
+    cudaMalloc(&d_a, batch * m * n * sizeof(float));
+    cudaMalloc(&d_b, batch * n * p * sizeof(float));
+    cudaMalloc(&d_out, batch * m * p * sizeof(float));
+
+    int *d_out_shape, *d_out_strides, *d_a_shape, *d_a_strides, *d_b_shape, *d_b_strides;
+    cudaMalloc(&d_out_shape, 3 * sizeof(int));
+    cudaMalloc(&d_out_strides, 3 * sizeof(int));
+    cudaMalloc(&d_a_shape, 3 * sizeof(int));
+    cudaMalloc(&d_a_strides, 3 * sizeof(int));
+    cudaMalloc(&d_b_shape, 3 * sizeof(int));
+    cudaMalloc(&d_b_strides, 3 * sizeof(int));
+
+    // Copy data to the device
+    cudaMemcpy(d_a, a_storage, batch * m * n * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, b_storage, batch * n * p * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out_shape, out_shape, 3 * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out_strides, out_strides, 3 * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a_shape, a_shape, 3 * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a_strides, a_strides, 3 * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b_shape, b_shape, 3 * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b_strides, b_strides, 3 * sizeof(int), cudaMemcpyHostToDevice);
+
+    int threadsPerBlock = 32;
+    dim3 blockDims(threadsPerBlock, threadsPerBlock, 1); // Adjust these values based on your specific requirements
+    dim3 gridDims((m + threadsPerBlock - 1) / threadsPerBlock, (p + threadsPerBlock - 1) / threadsPerBlock, batch);
     MatrixMultiplyKernel<<<gridDims, blockDims>>>(
-        out, out_shape, out_strides, a_storage, a_shape, a_strides, b_storage, b_shape, b_strides
+        d_out, d_out_shape, d_out_strides, d_a, d_a_shape, d_a_strides, d_b, d_b_shape, d_b_strides
     );
+
+    // Copy back to the host
+    cudaMemcpy(out, d_out, batch * m * p * sizeof(float), cudaMemcpyDeviceToHost);
+    
     cudaDeviceSynchronize();
+
+    // Check CUDA execution
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      fprintf(stderr, "Matmul Error: %s\n", cudaGetErrorString(err));
+      exit(EXIT_FAILURE);
+    }
+
+    // Free memory on device
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_out);
+    cudaFree(d_out_shape);
+    cudaFree(d_out_strides);
+    cudaFree(d_a_shape);
+    cudaFree(d_a_strides);
+    cudaFree(d_b_shape);
+    cudaFree(d_b_strides);
 }
 
 void tensorMap(
-    scalar_t* out, 
+    float* out, 
     int* out_shape, 
     int* out_strides, 
     int out_size, 
-    scalar_t* in_storage, 
+    float* in_storage, 
     int* in_shape, 
     int* in_strides,
+    int in_size,
     int shape_size,
     int fn_id
 ) {
-    int threadsPerBlock = BASE_THREAD_NUM;
+    float *d_out, *d_in;
+    // Allocate device memory
+    cudaMalloc(&d_out, out_size * sizeof(float));
+    cudaMalloc(&d_in, in_size * sizeof(float));
+
+    int *d_out_shape, *d_out_strides, *d_in_shape, *d_in_strides;
+    cudaMalloc(&d_out_shape, shape_size * sizeof(int));
+    cudaMalloc(&d_out_strides, shape_size * sizeof(int));
+    cudaMalloc(&d_in_shape, shape_size * sizeof(int));
+    cudaMalloc(&d_in_strides, shape_size * sizeof(int));
+
+    // Copy data from CPU(host) to GPU(device)
+    cudaMemcpy(d_in, in_storage, in_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out_shape, out_shape, shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out_strides, out_strides, shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_in_shape, in_shape, shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_in_strides, in_strides, shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    
+    int threadsPerBlock = 32;
     int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
-    mapKernel<<<blocksPerGrid, threadsPerBlock>>>(out, out_shape, out_strides, out_size, in_storage, in_shape, in_strides, shape_size, fn_id);
+    mapKernel<<<blocksPerGrid, threadsPerBlock>>>(
+      d_out, d_out_shape, d_out_strides, out_size, 
+      d_in, d_in_shape, d_in_strides, 
+      shape_size, fn_id);
+    
+    // Copy back to the host
+    cudaMemcpy(out, d_out, out_size * sizeof(float), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
+
+    // Check CUDA execution
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      fprintf(stderr, "Map Error: %s\n", cudaGetErrorString(err));
+      exit(EXIT_FAILURE);
+    }
+
+    // Free memory on device
+    cudaFree(d_in);
+    cudaFree(d_out);
+    cudaFree(d_out_shape);
+    cudaFree(d_out_strides);
+    cudaFree(d_in_shape);
+    cudaFree(d_in_strides);
 }
 
 
 void tensorZip(
-    scalar_t* out, 
+    float* out, 
     int* out_shape, 
     int* out_strides, 
     int out_size,
     int out_shape_size,
-    scalar_t* a_storage, 
+    float* a_storage, 
     int* a_shape, 
     int* a_strides,
+    int a_size,
     int a_shape_size,
-    scalar_t* b_storage, 
+    float* b_storage, 
     int* b_shape, 
     int* b_strides,
+    int b_size,
     int b_shape_size,
     int fn_id
 ) {
-    int threadsPerBlock = BASE_THREAD_NUM;
+    // Allocate device memory
+    float *d_out, *d_a, *d_b;
+    cudaMalloc(&d_a, a_size * sizeof(float));
+    cudaMalloc(&d_b, b_size * sizeof(float));
+    cudaMalloc(&d_out, out_size * sizeof(float));
+
+    int *d_out_shape, *d_out_strides, *d_a_shape, *d_a_strides, *d_b_shape, *d_b_strides;
+    cudaMalloc(&d_out_shape, out_shape_size * sizeof(int));
+    cudaMalloc(&d_out_strides, out_shape_size * sizeof(int));
+    cudaMalloc(&d_a_shape, a_shape_size * sizeof(int));
+    cudaMalloc(&d_a_strides, a_shape_size * sizeof(int));
+    cudaMalloc(&d_b_shape, b_shape_size * sizeof(int));
+    cudaMalloc(&d_b_strides, b_shape_size * sizeof(int));
+
+    // Copy data to the device
+    cudaMemcpy(d_a, a_storage, a_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, b_storage, b_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out_shape, out_shape, out_shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out_strides, out_strides, out_shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a_shape, a_shape, a_shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a_strides, a_strides, a_shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b_shape, b_shape, b_shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b_strides, b_strides, b_shape_size * sizeof(int), cudaMemcpyHostToDevice);
+
+    // Launch kernel
+    int threadsPerBlock = 32;
     int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
     zipKernel<<<blocksPerGrid, threadsPerBlock>>>(
-      out, out_shape, out_strides, out_size, out_shape_size,
-      a_storage, a_shape, a_strides, a_shape_size,
-      b_storage, b_shape, b_strides, b_shape_size,
+      d_out, d_out_shape, d_out_strides, out_size, out_shape_size,
+      d_a, d_a_shape, d_a_strides, a_shape_size,
+      d_b, d_b_shape, d_b_strides, b_shape_size,
       fn_id);
+
+    // Copy back to the host
+    cudaMemcpy(out, d_out, out_size * sizeof(float), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
+
+
+    // Check CUDA execution
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      fprintf(stderr, "Zip Error: %s\n", cudaGetErrorString(err));
+      exit(EXIT_FAILURE);
+    }
+
+    // Free memory on device
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_out);
+    cudaFree(d_out_shape);
+    cudaFree(d_out_strides);
+    cudaFree(d_a_shape);
+    cudaFree(d_a_strides);
+    cudaFree(d_b_shape);
+    cudaFree(d_b_strides);
 }
 
 
 
 void tensorReduce(
-    scalar_t* out, 
+    float* out, 
     int* out_shape, 
     int* out_strides, 
     int out_size, 
-    scalar_t* a_storage, 
+    float* a_storage, 
     int* a_shape, 
     int* a_strides, 
     int reduce_dim, 
-    double reduce_value,
+    float reduce_value,
     int shape_size,
     int fn_id
 ) {
-    int threadsPerBlock = BASE_THREAD_NUM;
+    // Allocate device memory
+    int a_size = out_size * a_shape[reduce_dim];
+    float *d_out, *d_a;
+    cudaMalloc(&d_out, out_size * sizeof(float));
+    cudaMalloc(&d_a, a_size * sizeof(float));
+
+    int *d_out_shape, *d_out_strides, *d_a_shape, *d_a_strides;
+    cudaMalloc(&d_out_shape, shape_size * sizeof(int));
+    cudaMalloc(&d_out_strides, shape_size * sizeof(int));
+    cudaMalloc(&d_a_shape, shape_size * sizeof(int));
+    cudaMalloc(&d_a_strides, shape_size * sizeof(int));
+
+    // Copy data to the device
+    cudaMemcpy(d_a, a_storage, a_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out_shape, out_shape, shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out_strides, out_strides, shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a_shape, a_shape, shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a_strides, a_strides, shape_size * sizeof(int), cudaMemcpyHostToDevice);
+    
+    // Launch kernel
+    int threadsPerBlock = 32;
     int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
     reduceKernel<<<blocksPerGrid, threadsPerBlock>>>(
-        out, out_shape, out_strides, out_size, 
-        a_storage, a_shape, a_strides, 
+        d_out, d_out_shape, d_out_strides, out_size, 
+        d_a, d_a_shape, d_a_strides, 
         reduce_dim, reduce_value, shape_size, fn_id
     );
+    
+    // Copy back to the host
+    cudaMemcpy(out, d_out, out_size * sizeof(float), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
+
+    // Check CUDA execution
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+      fprintf(stderr, "Reduce Error: %s\n", cudaGetErrorString(err));
+      exit(EXIT_FAILURE);
+    }
+
+    // Free memory on device
+    cudaFree(d_a);
+    cudaFree(d_out);
+    cudaFree(d_out_shape);
+    cudaFree(d_out_strides);
+    cudaFree(d_a_shape);
+    cudaFree(d_a_strides);
 }
 
 }

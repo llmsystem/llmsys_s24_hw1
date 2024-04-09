@@ -16,11 +16,14 @@ from .autodiff import Context
 from .tensor_ops import SimpleBackend, TensorBackend
 
 if TYPE_CHECKING:
-    from typing import Any, List, Tuple
+    from typing import Any, List, Tuple, Union
 
     from .tensor import Tensor
-    from .tensor_data import UserIndex, UserShape
+    from .tensor_data import (UserIndex, UserShape,
+                              Storage, OutIndex, Index, Shape, Strides)
 
+datatype = np.float32
+datasize = 4
 
 def wrap_tuple(x):  # type: ignore
     "Turn a possible value into a tuple"
@@ -110,6 +113,71 @@ class Mul(Function):
             grad_output.f.mul_zip(a, grad_output),
         )
 
+class PowerScalar(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor, scalar: Tensor) -> Tensor:
+        """Calculates the element-wise power of a to a single scalar.
+        Equivalent to a ** scalar in numpy if a is a n-dimensional array and scalar is a scalar.
+
+        Parameters
+        ----------
+            ctx : Context
+                A context object you can temporarily store values to.
+            a : Tensor
+                The tensor to raise to the power of.
+            scalar : Tensor
+                The exponent of shape (1,).
+        
+        Returns
+        -------
+            output : Tensor
+                Tensor containing the result of raising every element of a to scalar.
+        """
+        ### BEGIN YOUR SOLUTION
+        out = a.f.pow_scalar_zip(a, scalar)
+        ctx.save_for_backward(a, scalar)
+        return out
+        ### END YOUR SOLUTION
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, float]:
+        """Calculates the gradient of the input a with respect to grad_output.
+        NOTE: miniTorch requires that we two gradients: one for the input tensor and scalar.
+        Technically, we should only return one gradient for the tensor since there is no gradient for a constant.
+        
+        Parameters
+        ----------
+            ctx : Context
+                The same context used in forward.
+            grad_output : Tensor
+                The gradient in the backward pass with respect to the output of forward. (Same shape as forward's output.)
+        
+        Returns
+        -------
+            gradients : Tuple[Tensor, float]
+                Tuple containing (gradient_for_a, 0.0)
+                gradient_for_a must be the correct gradient, but just return 0.0 for the gradient of scalar.
+        """
+        a, scalar = ctx.saved_values
+        grad_a    = None
+        
+        ### BEGIN YOUR SOLUTION
+        grad_a = grad_output * (scalar * (a ** (scalar - 1)))
+        ### END YOUR SOLUTION
+
+        return (grad_a, 0.0)
+
+class Tanh(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor) -> Tensor: 
+        out = a.f.tanh_map(a)
+        ctx.save_for_backward(out)
+        return out
+    
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor) -> Tensor:
+        out = ctx.saved_values[0]
+        return grad_output * (-(out ** 2) + 1)
 
 class Sigmoid(Function):
     @staticmethod
@@ -300,6 +368,22 @@ def zeros(shape: UserShape, backend: TensorBackend = SimpleBackend) -> Tensor:
     )
 
 
+def ones(shape: UserShape, backend: TensorBackend = SimpleBackend) -> Tensor:
+    """
+    Produce a ones tensor of size `shape`.
+
+    Args:
+        shape : shape of tensor
+        backend : tensor backend
+
+    Returns:
+        new tensor
+    """
+    return minitorch.Tensor.make(
+        [1] * int(operators.prod(shape)), shape, backend=backend
+    )
+
+
 def rand(
     shape: UserShape,
     backend: TensorBackend = SimpleBackend,
@@ -367,7 +451,10 @@ def tensor(
             return []
 
     def flatten(ls: Any) -> List[float]:
-        if isinstance(ls, (list, tuple)):
+        if isinstance(ls, list) and len(ls) > 0 and (not isinstance(ls[0], list)):
+            # Already flat
+            return ls
+        elif isinstance(ls, (list, tuple)):
             return [y for x in ls for y in flatten(x)]
         else:
             return [ls]
@@ -377,23 +464,81 @@ def tensor(
     return _tensor(cur, tuple(shape2), backend=backend, requires_grad=requires_grad)
 
 
+def tensor_from_numpy(
+    ls: Storage, backend: TensorBackend = SimpleBackend, requires_grad: bool = False
+) -> Tensor:
+    """NOTE: This should ONLY be used to initialize a tensor. 
+    Any other usage could result in undefined behavior.
+    """
+
+    if ls.dtype != datatype:
+        ls = ls.astype(datatype)
+
+    ls = np.ascontiguousarray(ls)
+
+    res =  minitorch.Tensor(
+        v = minitorch.TensorData(
+            ls.flatten(), # Will create a COPY of the numpy array
+            ls.shape, 
+            tuple(i // datasize for i in ls.strides)
+        ),
+        backend=backend
+    )
+
+    res.requires_grad_(requires_grad)
+    
+    return res
+
+
+def zeros_tensor_from_numpy(shape, backend: TensorBackend = SimpleBackend):
+    """NOTE: This should ONLY be used to initialize a tensor. 
+    Any other usage could result in undefined behavior.
+    """
+    # return zeros(shape, backend)
+
+    zs = np.zeros(shape).astype(datatype)
+    return minitorch.Tensor(
+        v = minitorch.TensorData(
+            zs.flatten(), # Will create a COPY of the numpy array
+            shape, 
+            tuple(i // datasize for i in zs.strides)
+        ),
+        backend=backend
+    )
+
+
+def ones_tensor_from_numpy(shape, backend: TensorBackend = SimpleBackend):
+    """NOTE: This should ONLY be used to initialize a tensor. 
+    Any other usage could result in undefined behavior.
+    """
+    zs = np.ones(shape).astype(datatype)
+    return minitorch.Tensor(
+        v = minitorch.TensorData(
+            zs.flatten(), # Will create a COPY of the numpy array
+            shape, 
+            tuple(i // datasize for i in zs.strides)
+        ),
+        backend=backend
+    )
+
 # Gradient check for tensors
 
+
+import torch
 
 def grad_central_difference(
     f: Any, *vals: Tensor, arg: int = 0, epsilon: float = 1e-6, ind: UserIndex
 ) -> float:
     x = vals[arg]
-    up = zeros(x.shape)
-    up[ind] = epsilon
-    vals1 = [x if j != arg else x + up for j, x in enumerate(vals)]
-    vals2 = [x if j != arg else x - up for j, x in enumerate(vals)]
-    delta: Tensor = f(*vals1).sum() - f(*vals2).sum()
+    up_np = np.zeros(x.shape, dtype=np.float64)
+    up_np[ind] = epsilon
+    vals1 = [torch.tensor(x.to_numpy().astype(np.float64)) if j != arg else torch.tensor(x.to_numpy().astype(np.float64) + up_np) for j, x in enumerate(vals)]
+    vals2 = [torch.tensor(x.to_numpy().astype(np.float64)) if j != arg else torch.tensor(x.to_numpy().astype(np.float64) - up_np) for j, x in enumerate(vals)]
+    delta = float(f(*vals1).sum() - f(*vals2).sum().numpy())
+    return delta / (2.0 * epsilon)
 
-    return delta[0] / (2.0 * epsilon)
 
-
-def grad_check(f: Any, *vals: Tensor) -> None:
+def grad_check(f: Any, *vals: Tensor, tol=1e-6) -> None:
     for x in vals:
         x.requires_grad_(True)
         x.zero_grad_()
@@ -401,16 +546,14 @@ def grad_check(f: Any, *vals: Tensor) -> None:
     out = f(*vals)
     out.sum().backward()
     err_msg = """
+    Gradient check error for function %s.
 
-Gradient check error for function %s.
+    Input %s
 
-Input %s
+    Received derivative %f for argument %d and index %s,
+    but was expecting derivative %f from central difference.
 
-Received derivative %f for argument %d and index %s,
-but was expecting derivative %f from central difference.
-
-"""
-
+    """
     for i, x in enumerate(vals):
         ind = x._tensor.sample()
         check = grad_central_difference(f, *vals, arg=i, ind=ind)

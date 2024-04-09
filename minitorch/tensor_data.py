@@ -19,8 +19,9 @@ class IndexingError(RuntimeError):
     "Exception raised for indexing errors."
     pass
 
+datatype = np.float32
 
-Storage: TypeAlias = npt.NDArray[np.float64]
+Storage: TypeAlias = npt.NDArray[datatype]
 OutIndex: TypeAlias = npt.NDArray[np.int32]
 Index: TypeAlias = npt.NDArray[np.int32]
 Shape: TypeAlias = npt.NDArray[np.int32]
@@ -154,9 +155,9 @@ class TensorData:
         strides: Optional[UserStrides] = None,
     ):
         if isinstance(storage, np.ndarray):
-            self._storage = storage
+            self._storage = storage.astype(datatype)
         else:
-            self._storage = array(storage, dtype=float64)
+            self._storage = array(storage, dtype=datatype)
 
         if strides is None:
             strides = strides_from_shape(shape)

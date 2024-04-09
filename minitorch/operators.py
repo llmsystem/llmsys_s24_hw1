@@ -6,6 +6,14 @@ import math
 from typing import Callable, Iterable
 
 
+def pow(x: float, y: float) -> float: 
+    return x ** y
+
+
+def tanh(x: float) -> float: 
+    return math.tanh(x)
+
+
 def mul(x: float, y: float) -> float:
     "$f(x, y) = x * y$"
     return x * y

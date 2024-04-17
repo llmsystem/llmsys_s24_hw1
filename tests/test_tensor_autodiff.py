@@ -23,7 +23,7 @@ def test_create(t1: List[float]) -> None:
 
 def test_topo_case1() -> None:
     # Test case 1
-    a1, b1 = tensor([[0.88282157]]), tensor([[0.90170084]])
+    a1, b1 = tensor([[0.88282157]], requires_grad=True), tensor([[0.90170084]], requires_grad=True)
     c1 = 3 * a1 * a1 + 4 * b1 * a1 - a1
 
     soln = np.array(
@@ -43,7 +43,7 @@ def test_topo_case1() -> None:
 def test_topo_case2() -> None:
     # Test case 2
     
-    a1, b1 = tensor([[0.20914675], [0.65264178]]), tensor([[0.65394286], [.08218317]])
+    a1, b1 = tensor([[0.20914675], [0.65264178]], requires_grad=True), tensor([[0.65394286], [.08218317]], requires_grad=True)
     c1 = 3 * ((b1 * a1) + (2.3412 * b1) * a1) + 1.5
     
     soln = [[[0.65394286],[0.08218317]],
@@ -56,7 +56,6 @@ def test_topo_case2() -> None:
             [[2.87092801],[2.03762752]]]
 
     topo_order = np.array([x.to_numpy() for x in topological_sort(c1)])[::-1]
-
     assert len(soln) == len(topo_order)
     
     # step through list as entries differ in length

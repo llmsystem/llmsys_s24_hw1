@@ -162,9 +162,11 @@ def test_view() -> None:
 @given(tensors())
 def test_back_view(t1: Tensor) -> None:
     "Test the graident of view"
-
+    import torch
     def view(a: Tensor) -> Tensor:
         a = a.contiguous()
+        if isinstance(a, torch.Tensor):
+            return a.view(a.size())
         return a.view(a.size)
 
     grad_check(view, t1)

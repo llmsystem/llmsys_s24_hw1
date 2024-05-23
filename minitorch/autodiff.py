@@ -3,6 +3,7 @@ from typing import Any, Iterable, List, Tuple
 
 from typing_extensions import Protocol
 
+from Queue import Queue
 
 def central_difference(f: Any, *vals: Any, arg: int = 0, epsilon: float = 1e-6) -> Any:
     r"""
@@ -65,7 +66,27 @@ def topological_sort(variable: Variable) -> Iterable[Variable]:
     # BEGIN ASSIGN1_1
     # TODO
     
-    raise NotImplementedError("Task Autodiff Not Implemented Yet")
+    if not variable.is_leaf():
+        raise RuntimeError("The start node is not a leaf node.")
+    sorted_list = []
+    sorted_list.append(variable)
+    node_queue = Queue()
+    node_queue.put(variable)
+    index_queue = Queue()
+    index_queue.put(-1)
+    while not node_queue.empty():
+        node = node_queue.get()
+        index = index_queue.get()
+        parent_num = len(node.parents)
+        for i in range(parent_num):
+            parent = node.parents[i]
+            if not parent.is_constant():
+                sorted_list.insert(index, parent)
+                node_queue.put(parent)
+                index_queue.put(index - (len - i))
+    
+    return sorted_list
+    # raise NotImplementedError("Task Autodiff Not Implemented Yet")
     # END ASSIGN1_1
 
 

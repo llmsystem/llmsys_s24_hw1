@@ -65,38 +65,38 @@ def topological_sort(variable: Variable) -> Iterable[Variable]:
     """
     # BEGIN ASSIGN1_1
     # TODO
-    
+   
+    node_stack = []
+    node_stack.append(variable)
+    visited = set()
     sorted_list = []
-    sorted_list.append(variable)
-    node_queue = Queue()
-    node_queue.put(variable)
 
-    try:
-        variable.parents()
-    except AssertionError:
-        print("no parents")
+    while len(node_stack) > 0:
+        if node_stack[-1].unique_id not in visited:
+            try:
+                parents = node_stack[-1].parents
+                all_visited = True
+                for parent in reversed(parents):
+                    if parent.unique_id not in visited and not parent.is_constant():
+                        all_visited = False
+                        node_stack.append(parent)
 
-
-    while not node_queue.empty():
-        node = node_queue.get()
-        try:
-            for parent in node.parents():
-                if not parent.is_constant():
-                    sorted_list.insert(0, parent)
-                    node_queue.put(parent)
-        except AssertionError:
-            pass
+                if all_visited:
+                    top = node_stack[-1]
+                    node_stack.pop()
+                    sorted_list.append(top)
+                    visited.add(top.unique_id)
+            except AssertionError:
+                top = node_stack[-1]
+                node_stack.pop()
+                sorted_list.append(top)
+                visited.add(top.unique_id)
+        else:
+            node_stack.pop()
     
-    node_id_set = set()
-    final_sorted_list = []
-    for node in sorted_list:
-        node_id = node.unique_id
-        if node_id not in node_id_set:
-            node_id_set.add(node_id)
-            final_sorted_list.append(node)
+    print(sorted_list)
+    return reversed(sorted_list)
 
-    print(final_sorted_list)
-    return final_sorted_list
     # raise NotImplementedError("Task Autodiff Not Implemented Yet")
     # END ASSIGN1_1
 

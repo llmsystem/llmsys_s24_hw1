@@ -3,7 +3,7 @@ from typing import Any, Iterable, List, Tuple
 
 from typing_extensions import Protocol
 
-from Queue import Queue
+from queue import Queue
 
 def central_difference(f: Any, *vals: Any, arg: int = 0, epsilon: float = 1e-6) -> Any:
     r"""
@@ -66,26 +66,37 @@ def topological_sort(variable: Variable) -> Iterable[Variable]:
     # BEGIN ASSIGN1_1
     # TODO
     
-    if not variable.is_leaf():
-        raise RuntimeError("The start node is not a leaf node.")
     sorted_list = []
     sorted_list.append(variable)
     node_queue = Queue()
     node_queue.put(variable)
-    index_queue = Queue()
-    index_queue.put(-1)
+
+    try:
+        variable.parents()
+    except AssertionError:
+        print("no parents")
+
+
     while not node_queue.empty():
         node = node_queue.get()
-        index = index_queue.get()
-        parent_num = len(node.parents)
-        for i in range(parent_num):
-            parent = node.parents[i]
-            if not parent.is_constant():
-                sorted_list.insert(index, parent)
-                node_queue.put(parent)
-                index_queue.put(index - (len - i))
+        try:
+            for parent in node.parents():
+                if not parent.is_constant():
+                    sorted_list.insert(0, parent)
+                    node_queue.put(parent)
+        except AssertionError:
+            pass
     
-    return sorted_list
+    node_id_set = set()
+    final_sorted_list = []
+    for node in sorted_list:
+        node_id = node.unique_id
+        if node_id not in node_id_set:
+            node_id_set.add(node_id)
+            final_sorted_list.append(node)
+
+    print(final_sorted_list)
+    return final_sorted_list
     # raise NotImplementedError("Task Autodiff Not Implemented Yet")
     # END ASSIGN1_1
 

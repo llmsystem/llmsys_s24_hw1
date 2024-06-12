@@ -84,18 +84,17 @@ def topological_sort(variable: Variable) -> Iterable[Variable]:
                 if all_visited:
                     top = node_stack[-1]
                     node_stack.pop()
-                    sorted_list.append(top)
+                    sorted_list.insert(0, top)
                     visited.add(top.unique_id)
             except AssertionError:
                 top = node_stack[-1]
                 node_stack.pop()
-                sorted_list.append(top)
+                sorted_list.insert(0, top)
                 visited.add(top.unique_id)
         else:
             node_stack.pop()
     
-    print(sorted_list)
-    return reversed(sorted_list)
+    return sorted_list
 
     # raise NotImplementedError("Task Autodiff Not Implemented Yet")
     # END ASSIGN1_1

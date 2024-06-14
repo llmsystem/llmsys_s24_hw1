@@ -246,47 +246,33 @@ __global__ void MatrixMultiplyKernel(
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
 
-    float out_tile[TILE][TILE];
-    for (int i = 0; i < TILE; ++i) {
-        for (int j = 0; j < TILE; ++j) {
-            out_tile[i][j] = 0;
+    if (row < out_shape[1] && col < out_shape[2]) {
+      int block_row = threadIdx.x;
+      int block_col = threadIdx.y;
+
+      float out_result = 0;
+
+      for (int i = 0; i < a_shape[2]; i += TILE) {
+
+        int a_index[3] = {batch, row, i + block_col};
+        a_shared[block_row][block_col] = a_storage[index_to_position(a_index, a_strides, 3)];
+
+        int b_index[3] = {batch, i + block_row, col};
+        b_shared[block_row][block_col] = b_storage[index_to_position(b_index, b_strides, 3)];
+
+        __syncthreads();
+
+        for (int k = 0; k < TILE; k++){
+          out_result += a_shared[block_row][k] * b_shared[k][block_col];
         }
+
+        __syncthreads();
+      }
+
+      int out_index[3] = {batch, row, col};
+      out[index_to_position(out_index, out_strides, 3)] = out_result;
     }
-
-    for (int i = 0; i < a_shape[2]; i += TILE) {
-
-      for (int shared_row = 0; shared_row < TILE; shared_row++){
-        for (int shared_col = 0; shared_col < TILE; shared_col++){
-          int a_index[3] = {batch, row * TILE + shared_row, i + shared_col};
-          int a_pos = index_to_position(a_index, a_shape, 3);
-          a_shared[shared_row][shared_col] = a_storage[a_pos];
-
-          int b_index[3] = {batch, i + shared_row, col * TILE + shared_col};
-          int b_pos = index_to_position(b_index, b_shape, 3);
-          b_shared[shared_row][shared_col] = b_storage[b_pos];
-        }
-      }
-
-      __syncthreads();
-
-      for (int shared_row = 0; shared_row < TILE; shared_row++){
-        for (int shared_col = 0; shared_col < TILE; shared_col++){
-          for (int k = 0; k < TILE; k++){
-            out_tile[shared_row][shared_col] += a_shared[shared_row][k] * b_shared[k][shared_col];
-          }
-        }
-      }
-      __syncthreads();
-
-      for (int shared_row = 0; shared_row < TILE; shared_row++){
-        for (int shared_col = 0; shared_col < TILE; shared_col++){
-          int out_index[3] = {batch, row * TILE + shared_row, col * TILE + shared_col};
-          int out_pos = index_to_position(out_index, out_shape,3);
-          out[out_pos] = out_tile[shared_row][shared_col];
-        }
-      }
-      
-    }
+    
 
     // assert(false && "Not Implemented");
     /// END ASSIGN1_2
